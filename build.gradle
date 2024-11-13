@@ -19,7 +19,13 @@ repositories {
 
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter'
+	implementation 'com.amazonaws:aws-lambda-java-core:1.2.0'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	implementation 'org.postgresql:postgresql:42.6.0'
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'com.amazonaws:aws-lambda-java-core:1.2.2'
+	implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
