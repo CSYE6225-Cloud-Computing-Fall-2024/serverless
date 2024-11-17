@@ -1,112 +1,195 @@
 package com.swamyms.serverless;
 
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.RequestHandler;
 import com.amazonaws.services.lambda.runtime.events.SNSEvent;
-import jakarta.mail.*;
-import jakarta.mail.internet.InternetAddress;
-import jakarta.mail.internet.MimeMessage;
+import com.amazonaws.services.lambda.runtime.RequestHandler;
 
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.util.Base64;
-import java.util.Properties;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import okhttp3.*;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.io.OutputStream;
+import java.net.*;
+
+
+import java.io.IOException;
 
 public class UserVerificationLambda implements RequestHandler<SNSEvent, String> {
 
-    // Load environment variables
-    private static final String SMTP_HOST = System.getenv("SMTP_HOST");
-    private static final int SMTP_PORT = Integer.parseInt(System.getenv("SMTP_PORT"));
-    private static final String SMTP_USERNAME = System.getenv("SMTP_USERNAME");
-    private static final String SMTP_PASSWORD = System.getenv("SMTP_PASSWORD");
-    private static final String SMTP_VERIFICATION_LINK = System.getenv("SMTP_VERIFICATION_LINK");
-    private static final String SMTP_FROM_EMAIL = System.getenv("SMTP_FROM_EMAIL");
+    private static final String MAILGUN_API_URL = System.getenv("MAILGUN_API_URL");
+    private static final String MAILGUN_API_KEY = System.getenv("MAILGUN_API_KEY");
+    private static final String FROM_EMAIL = System.getenv("FROM_EMAIL");
+    private static final String VERIFICATION_LINK = System.getenv("VERIFICATION_LINK");
 
-    private static final String DB_HOST_IP = System.getenv("DB_HOST_IP");
-    private static final String DB_USER = System.getenv("DB_USER");
-    private static final String DB_PASSWORD = System.getenv("DB_PASSWORD");
-    private static final String DB_DATABASE = System.getenv("DB_DATABASE");
-    private static final String DB_TABLE = System.getenv("DB_TABLE");
+    // OkHttpClient for HTTP requests
+    private final OkHttpClient client = new OkHttpClient();
 
     @Override
     public String handleRequest(SNSEvent event, Context context) {
-        event.getRecords().forEach(record -> {
-            String userData = new String(Base64.getDecoder().decode(record.getSNS().getMessage()));
-            String userEmail = parseUsernameFromJSON(userData); // You can adjust parsing if needed
-            System.out.println("Received user email: " + userEmail);
+        context.getLogger().log("Start processing SNS event");
 
-            // Send email and update DB
-            sendEmail(userEmail);
-        });
-        return "Execution completed";
-    }
-
-    private void sendEmail(String username) {
+        // Network connectivity test
         try {
-            String verificationLink = String.format("%s/%s", SMTP_VERIFICATION_LINK, username);
-            String messageContent = String.format("""
-                    <html>
-                    <body>
-                        <p>Dear %s,</p>
-                        <p>Here is your verification link: <a href="%s" target="_blank">%s</a></p>
-                    </body>
-                    </html>
-                    """, username, verificationLink, verificationLink);
+            InetAddress address = InetAddress.getByName("api.mailgun.net");
+            context.getLogger().log("Mailgun IP: " + address.getHostAddress());
+        } catch (UnknownHostException e) {
+            context.getLogger().log("Failed to resolve api.mailgun.net: " + e.getMessage());
+            return "Network issue: Unable to resolve Mailgun API endpoint";
+        }
 
-            // Set up SMTP properties
-            Properties properties = new Properties();
-            properties.put("mail.smtp.auth", "true");
-            properties.put("mail.smtp.starttls.enable", "true");
-            properties.put("mail.smtp.host", SMTP_HOST);
-            properties.put("mail.smtp.port", String.valueOf(SMTP_PORT));
+        String snsMessage = event.getRecords().get(0).getSNS().getMessage();
+        context.getLogger().log("Extracted SNS message: " + snsMessage);
 
-            // Get session
-            Session session = Session.getInstance(properties, new Authenticator() {
-                protected PasswordAuthentication getPasswordAuthentication() {
-                    return new PasswordAuthentication(SMTP_USERNAME, SMTP_PASSWORD);
+        String userEmail = extractUserEmailFromMessage(snsMessage);
+        String userFirstName = extractUserFirstNameFromMessage(snsMessage);
+        context.getLogger().log("Extracted user email: " + userEmail);
+
+        try {
+            sendVerificationEmail(userEmail,userFirstName);
+            context.getLogger().log("Email sent successfully to: " + userEmail);
+        } catch (IOException e) {
+            context.getLogger().log("Error sending email: " + e.getMessage());
+            return "Error sending email";
+        }
+
+        context.getLogger().log("Processing complete");
+        return "Email sent successfully";
+    }
+
+
+
+    private String extractUserEmailFromMessage(String snsMessage) {
+        // Initialize Jackson ObjectMapper
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        try {
+            // Parse the JSON string
+            JsonNode rootNode = objectMapper.readTree(snsMessage);
+
+            // Extract the email from the parsed JSON
+            JsonNode emailNode = rootNode.get("email");
+
+            // Return the email if it exists
+            if (emailNode != null) {
+                return emailNode.asText();  // Convert the email node to a string
+            } else {
+                throw new IllegalArgumentException("Email field not found in the SNS message.");
+            }
+        } catch (Exception e) {
+            // Handle exceptions (e.g., invalid JSON format)
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    private String extractUserFirstNameFromMessage(String snsMessage) {
+        // Initialize Jackson ObjectMapper
+        ObjectMapper objectMapper = new ObjectMapper();
+
+        try {
+            // Parse the JSON string
+            JsonNode rootNode = objectMapper.readTree(snsMessage);
+
+            // Extract the email from the parsed JSON
+            JsonNode firstNameNode = rootNode.get("firstName");
+
+            // Return the email if it exists
+            if (firstNameNode != null) {
+                return firstNameNode.asText();  // Convert the email node to a string
+            } else {
+                throw new IllegalArgumentException("firstName field not found in the SNS message.");
+            }
+        } catch (Exception e) {
+            // Handle exceptions (e.g., invalid JSON format)
+            e.printStackTrace();
+            return null;
+        }
+    }
+
+    public void sendVerificationEmail(String username, String userFirstName) throws IOException {
+        // Prepare the verification link (URL)
+        String verificationLink = VERIFICATION_LINK + username;
+
+        // HTML message body with placeholders for dynamic content (using concatenation for multiline strings)
+        String message = "<!DOCTYPE html>\n" +
+                "<html lang=\"en\">\n" +
+                "  <head>\n" +
+                "    <meta charset=\"UTF-8\">\n" +
+                "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n" +
+                "    <title>Verification Email</title>\n" +
+                "    <style>\n" +
+                "      body {\n" +
+                "        font-family: Arial, sans-serif;\n" +
+                "        color: #333;\n" +
+                "        line-height: 1.6;\n" +
+                "      }\n" +
+                "      a {\n" +
+                "        color: #007bff;\n" +
+                "        text-decoration: none;\n" +
+                "      }\n" +
+                "      a:hover {\n" +
+                "        text-decoration: underline;\n" +
+                "      }\n" +
+                "    </style>\n" +
+                "  </head>\n" +
+                "  <body>\n" +
+                "    <p>Dear " + userFirstName + ",</p>\n" +
+                "    <p>\n" +
+                "      Thank you for creating user for Assignment 08. Please click the link below to verify your email address. Link expires within 2 minutes.\n" +
+                "    </p>\n" +
+                "    <p>\n" +
+                "      <a href=\"" + verificationLink + "\" target=\"_blank\">Click here to verify your email</a>\n" +
+                "    </p>\n" +
+                "    <p>\n" +
+                "      If you did not request this, please ignore this email.\n" +
+                "    </p>\n" +
+                "    <p>Best regards,</p>\n" +
+                "    <p>Swamy Mudiga</p>\n" +
+                "  </body>\n" +
+                "</html>";
+
+        // Prepare the request URL and body
+        String authHeader = "Basic " + java.util.Base64.getEncoder().encodeToString(("api:" + MAILGUN_API_KEY).getBytes());
+
+        // Prepare the request body
+        String body = "from=" + URLEncoder.encode(FROM_EMAIL, "UTF-8") +
+                "&to=" + URLEncoder.encode(username, "UTF-8") +
+                "&subject=" + URLEncoder.encode("Welcome to Swamy Mudiga Cloud Platform", "UTF-8") +
+                "&text=" + URLEncoder.encode("Hello, please verify your account by clicking the link below.", "UTF-8") +
+                "&html=" + URLEncoder.encode(message, "UTF-8");
+
+
+        // Create a URL object
+        URL url = new URL(MAILGUN_API_URL);
+        HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+        connection.setRequestMethod("POST");
+        connection.setRequestProperty("Authorization", authHeader);
+        connection.setDoOutput(true);
+
+        // Write the request body to the connection's output stream
+        try (OutputStream os = connection.getOutputStream()) {
+            byte[] input = body.getBytes("utf-8");
+            os.write(input, 0, input.length);
+        }
+
+        // Get the response code and log it
+        int responseCode = connection.getResponseCode();
+        if (responseCode == HttpURLConnection.HTTP_OK) {
+            System.out.println("Email sent successfully to: " + username);
+        } else {
+            System.out.println("Error: Unable to send email. Response Code: " + responseCode);
+            try (BufferedReader in = new BufferedReader(new InputStreamReader(connection.getInputStream()))) {
+                String inputLine;
+                StringBuilder response = new StringBuilder();
+                while ((inputLine = in.readLine()) != null) {
+                    response.append(inputLine);
                 }
-            });
-
-            // Prepare message
-            Message message = new MimeMessage(session);
-            message.setFrom(new InternetAddress(SMTP_FROM_EMAIL));
-            message.setRecipients(Message.RecipientType.TO, InternetAddress.parse(username));
-            message.setSubject("Verify Your Email");
-            message.setContent(messageContent, "text/html");
-
-            // Send message
-            Transport.send(message);
-            System.out.println("Email sent to user: " + username);
-
-            // Store sent email record in DB
-            storeSentEmail(username);
-
-        } catch (Exception e) {
-            System.err.println("Exception in sendEmail: " + e.getMessage());
+                System.out.println("Response Body: " + response.toString());
+            }
         }
     }
 
-    private void storeSentEmail(String username) {
-        String dbUrl = "jdbc:postgresql://" + DB_HOST_IP + "/" + DB_DATABASE; // PostgreSQL JDBC URL
-        String updateQuery = "UPDATE " + DB_TABLE + " SET email_sent = CURRENT_TIMESTAMP, verify_email_sent = TRUE WHERE username = ?";
 
-        try (Connection connection = DriverManager.getConnection(dbUrl, DB_USER, DB_PASSWORD);
-             PreparedStatement statement = connection.prepareStatement(updateQuery)) {
-
-            statement.setString(1, username);
-            int rowsAffected = statement.executeUpdate();
-            System.out.println("Database update executed, rows affected: " + rowsAffected);
-
-        } catch (Exception e) {
-            System.err.println("Exception in storeSentEmail: " + e.getMessage());
-        }
-    }
-
-    private String parseUsernameFromJSON(String userData) {
-        // Assume JSON structure and parse username
-        // Replace with your JSON parsing logic if necessary
-        return userData.split(":")[1].replaceAll("\"", "").replaceAll("}", "").trim();
-    }
 }
-
