@@ -26,17 +26,6 @@ dependencies {
 	// AWS Lambda Java SDK
 	implementation 'com.amazonaws:aws-lambda-java-core:1.11.0'
 
-	// AWS SDK for SNS (Required for SNSEvent)
-	implementation 'com.amazonaws:aws-java-sdk-sns:1.12.353'
-
-
-
-	// OkHttp (for HTTP requests to Mailgun)
-	implementation 'com.squareup.okhttp3:okhttp:4.9.3'
-
-	// Optional: For JSON parsing (if needed for parsing SNS messages)
-	implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
-
 	implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
 
 	implementation 'org.springframework.boot:spring-boot-starter'
