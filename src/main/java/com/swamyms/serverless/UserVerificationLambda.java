@@ -6,7 +6,6 @@ import com.amazonaws.services.lambda.runtime.RequestHandler;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import okhttp3.*;
 
 import java.io.BufferedReader;
 import java.io.InputStreamReader;
@@ -15,6 +14,7 @@ import java.net.*;
 
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 
 public class UserVerificationLambda implements RequestHandler<SNSEvent, String> {
 
@@ -22,9 +22,6 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
     private static final String MAILGUN_API_KEY = System.getenv("MAILGUN_API_KEY");
     private static final String FROM_EMAIL = System.getenv("FROM_EMAIL");
     private static final String VERIFICATION_LINK = System.getenv("VERIFICATION_LINK");
-
-    // OkHttpClient for HTTP requests
-    private final OkHttpClient client = new OkHttpClient();
 
     @Override
     public String handleRequest(SNSEvent event, Context context) {
@@ -154,11 +151,11 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
         String authHeader = "Basic " + java.util.Base64.getEncoder().encodeToString(("api:" + MAILGUN_API_KEY).getBytes());
 
         // Prepare the request body
-        String body = "from=" + URLEncoder.encode(FROM_EMAIL, "UTF-8") +
-                "&to=" + URLEncoder.encode(username, "UTF-8") +
-                "&subject=" + URLEncoder.encode("Welcome to Swamy Mudiga Cloud Platform", "UTF-8") +
-                "&text=" + URLEncoder.encode("Hello, please verify your account by clicking the link below.", "UTF-8") +
-                "&html=" + URLEncoder.encode(message, "UTF-8");
+        String body = "from=" + URLEncoder.encode(FROM_EMAIL, StandardCharsets.UTF_8) +
+                "&to=" + URLEncoder.encode(username, StandardCharsets.UTF_8) +
+                "&subject=" + URLEncoder.encode("Welcome to Swamy Mudiga Cloud Platform", StandardCharsets.UTF_8) +
+                "&text=" + URLEncoder.encode("Hello, please verify your account by clicking the link below.", StandardCharsets.UTF_8) +
+                "&html=" + URLEncoder.encode(message, StandardCharsets.UTF_8);
 
 
         // Create a URL object
