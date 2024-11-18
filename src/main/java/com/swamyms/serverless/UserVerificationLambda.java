@@ -15,6 +15,7 @@ import java.net.*;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Base64;
 
 public class UserVerificationLambda implements RequestHandler<SNSEvent, String> {
 
@@ -106,8 +107,11 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
     }
 
     public void sendVerificationEmail(String username, String userFirstName) throws IOException {
+        // Encode the username
+        String encodedUsername = Base64.getUrlEncoder().encodeToString(username.getBytes(StandardCharsets.UTF_8));
+
         // Prepare the verification link (URL)
-        String verificationLink = VERIFICATION_LINK + username;
+        String verificationLink = VERIFICATION_LINK + encodedUsername;
 
         // HTML message body with placeholders for dynamic content (using concatenation for multiline strings)
         String message = "<!DOCTYPE html>\n" +
