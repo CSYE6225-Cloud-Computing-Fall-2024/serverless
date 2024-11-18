@@ -134,7 +134,7 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
                 "  <body>\n" +
                 "    <p>Dear " + userFirstName + ",</p>\n" +
                 "    <p>\n" +
-                "      Thank you for creating user for Assignment 08. Please click the link below to verify your email address. Link expires within 2 minutes.\n" +
+                "      Thank you for creating user with our website. Please click the link below to verify your email address. Link expires within 2 minutes.\n" +
                 "    </p>\n" +
                 "    <p>\n" +
                 "      <a href=\"" + verificationLink + "\" target=\"_blank\">Click here to verify your email</a>\n" +
