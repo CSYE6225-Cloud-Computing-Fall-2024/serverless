@@ -2,6 +2,7 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.3.5'
 	id 'io.spring.dependency-management' version '1.1.6'
+	id 'application'
 }
 
 group = 'com.swamyms'
@@ -13,16 +14,51 @@ java {
 	}
 }
 
+application {
+	mainClassName = 'com.swamyms.serverless.UserVerificationLambda'
+}
+
 repositories {
 	mavenCentral()
 }
 
 dependencies {
+	// AWS Lambda Java SDK
+	implementation 'com.amazonaws:aws-lambda-java-core:1.11.0'
+
+	implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+
 	implementation 'org.springframework.boot:spring-boot-starter'
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
+	implementation 'com.amazonaws:aws-lambda-java-core:1.2.0'
+	implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
+	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
+	implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// Disable the BootJar task to prevent it from creating the JAR file
+tasks.named('bootJar') {
+	enabled = false
+}
+
+// Enable the regular JAR task and ensure it includes dependencies
+tasks.named('jar') {
+	enabled = true
+	manifest {
+		attributes 'Main-Class': 'com.swamyms.serverless.UserVerificationLambda'
+	}
+	from {
+		configurations.runtimeClasspath.collect { it.isDirectory() ? it : zipTree(it) }
+	}
 }
 
 tasks.named('test') {
 	useJUnitPlatform()
 }
+jar {
+	duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+}
+

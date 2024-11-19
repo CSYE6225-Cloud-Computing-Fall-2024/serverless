@@ -35,3 +35,38 @@ out/
 
 ### VS Code ###
 .vscode/
+
+# AWS-specific files
+.env
+.aws/
+
+eat! For a Gradle-based Java project, here’s a refined .gitignore template:
+
+plaintext
+Copy code
+# Compiled class files
+*.class
+
+# Log files
+*.log
+*.tmp
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# Java JAR/WAR/EAR files
+*.jar
+*.war
+*.ear
+
+# Gradle files
+.gradle/
+
+# IDE files
+*.idea/
+*.vscode/
+*.project
+*.classpath
+*.settings/
+*.factorypath
