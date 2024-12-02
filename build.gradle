@@ -33,10 +33,15 @@ dependencies {
 	implementation 'com.amazonaws:aws-lambda-java-core:1.2.0'
 	implementation 'com.amazonaws:aws-lambda-java-events:3.11.0'
 	implementation 'me.paulschwarz:spring-dotenv:4.0.0'
-	implementation 'com.fasterxml.jackson.core:jackson-databind:2.15.2'
 
-	testImplementation 'org.springframework.boot:spring-boot-starter-test'
+	// AWS SDK v2 for Secrets Manager
+	implementation 'software.amazon.awssdk:secretsmanager:2.20.0'  // v2 SDK
+
+	// Apache Commons Codec for Base64 encoding/decoding
+	//implementation 'org.apache.commons:commons-codec:1.15'
+
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 }
 
 // Disable the BootJar task to prevent it from creating the JAR file

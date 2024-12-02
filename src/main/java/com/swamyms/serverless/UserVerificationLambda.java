@@ -1,32 +1,52 @@
 package com.swamyms.serverless;
 
 import com.amazonaws.services.lambda.runtime.Context;
-import com.amazonaws.services.lambda.runtime.events.SNSEvent;
 import com.amazonaws.services.lambda.runtime.RequestHandler;
-
+import com.amazonaws.services.lambda.runtime.events.SNSEvent;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.*;
-
-
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.secretsmanager.SecretsManagerClient;
+ import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueRequest;
+ import software.amazon.awssdk.services.secretsmanager.model.GetSecretValueResponse;
+
+
 public class UserVerificationLambda implements RequestHandler<SNSEvent, String> {
 
-    private static final String MAILGUN_API_URL = System.getenv("MAILGUN_API_URL");
-    private static final String MAILGUN_API_KEY = System.getenv("MAILGUN_API_KEY");
-    private static final String FROM_EMAIL = System.getenv("FROM_EMAIL");
-    private static final String VERIFICATION_LINK = System.getenv("VERIFICATION_LINK");
+    private static final String SECRET_NAME = System.getenv("SECRET_NAME");
+    private static final String REGION_NAME = System.getenv("REGION_NAME");
 
     @Override
     public String handleRequest(SNSEvent event, Context context) {
         context.getLogger().log("Start processing SNS event");
+
+        // Fetch the credentials from Secrets Manager
+        String secret = getSecret(SECRET_NAME);
+
+        // Use Jackson ObjectMapper to parse the secret JSON
+        ObjectMapper objectMapper = new ObjectMapper();
+        JsonNode secretJson;
+        try {
+            secretJson = objectMapper.readTree(secret);
+        } catch (Exception e) {
+            context.getLogger().log("Error parsing secret: " + e.getMessage());
+            return "Error parsing secret";
+        }
+
+        // Extract email service credentials from the secret
+        String mailgunApiUrl = secretJson.get("MAILGUN_API_URL").asText();
+        String mailgunApiKey = secretJson.get("MAILGUN_API_KEY").asText();
+        String fromEmail = secretJson.get("FROM_EMAIL").asText();
+        String verificationLink = secretJson.get("VERIFICATION_LINK").asText();
 
         // Network connectivity test
         try {
@@ -45,7 +65,7 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
         context.getLogger().log("Extracted user email: " + userEmail);
 
         try {
-            sendVerificationEmail(userEmail,userFirstName);
+            sendVerificationEmail(userEmail,userFirstName,mailgunApiUrl,mailgunApiKey, fromEmail, verificationLink);
             context.getLogger().log("Email sent successfully to: " + userEmail);
         } catch (IOException e) {
             context.getLogger().log("Error sending email: " + e.getMessage());
@@ -106,12 +126,13 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
         }
     }
 
-    public void sendVerificationEmail(String username, String userFirstName) throws IOException {
+    public void sendVerificationEmail(String username, String userFirstName, String mailgunApiUrl,
+                                      String mailgunApiKey, String fromEmail, String verificationLink) throws IOException {
         // Encode the username
         String encodedUsername = Base64.getUrlEncoder().encodeToString(username.getBytes(StandardCharsets.UTF_8));
 
         // Prepare the verification link (URL)
-        String verificationLink = VERIFICATION_LINK + encodedUsername;
+        String fullVerificationLink = verificationLink + encodedUsername;
 
         // HTML message body with placeholders for dynamic content (using concatenation for multiline strings)
         String message = "<!DOCTYPE html>\n" +
@@ -141,7 +162,7 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
                 "      Thank you for creating user with our website. Please click the link below to verify your email address. Link expires within 2 minutes.\n" +
                 "    </p>\n" +
                 "    <p>\n" +
-                "      <a href=\"" + verificationLink + "\" target=\"_blank\">Click here to verify your email</a>\n" +
+                "      <a href=\"" + fullVerificationLink + "\" target=\"_blank\">Click here to verify your email</a>\n" +
                 "    </p>\n" +
                 "    <p>\n" +
                 "      If you did not request this, please ignore this email.\n" +
@@ -152,10 +173,10 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
                 "</html>";
 
         // Prepare the request URL and body
-        String authHeader = "Basic " + java.util.Base64.getEncoder().encodeToString(("api:" + MAILGUN_API_KEY).getBytes());
+        String authHeader = "Basic " + java.util.Base64.getEncoder().encodeToString(("api:" + mailgunApiKey).getBytes());
 
         // Prepare the request body
-        String body = "from=" + URLEncoder.encode(FROM_EMAIL, StandardCharsets.UTF_8) +
+        String body = "from=" + URLEncoder.encode(fromEmail, StandardCharsets.UTF_8) +
                 "&to=" + URLEncoder.encode(username, StandardCharsets.UTF_8) +
                 "&subject=" + URLEncoder.encode("Welcome to Swamy Mudiga Cloud Platform", StandardCharsets.UTF_8) +
                 "&text=" + URLEncoder.encode("Hello, please verify your account by clicking the link below.", StandardCharsets.UTF_8) +
@@ -163,7 +184,7 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
 
 
         // Create a URL object
-        URL url = new URL(MAILGUN_API_URL);
+        URL url = new URL(mailgunApiUrl);
         HttpURLConnection connection = (HttpURLConnection) url.openConnection();
         connection.setRequestMethod("POST");
         connection.setRequestProperty("Authorization", authHeader);
@@ -189,6 +210,39 @@ public class UserVerificationLambda implements RequestHandler<SNSEvent, String> 
                 }
                 System.out.println("Response Body: " + response.toString());
             }
+        }
+    }
+
+    public String getSecret(String secretName) {
+
+//        String secretName = "db-password";
+        Region region = Region.of(REGION_NAME);
+
+        // Create a Secrets Manager client
+        SecretsManagerClient client = SecretsManagerClient.builder()
+                .region(region)
+                .build();
+
+        GetSecretValueRequest getSecretValueRequest = GetSecretValueRequest.builder()
+                .secretId(secretName)
+                .build();
+
+        GetSecretValueResponse getSecretValueResponse;
+
+        try {
+            getSecretValueResponse = client.getSecretValue(getSecretValueRequest);
+
+//             SecretsManager stores the secret as a string or binary. If it's stored as a string, return it.
+            if (getSecretValueResponse.secretString() != null) {
+                return getSecretValueResponse.secretString();
+            } else {
+                byte[] decodedBinarySecret = getSecretValueResponse.secretString().getBytes();
+                return new String(decodedBinarySecret);
+            }
+        } catch (Exception e) {
+            // For a list of exceptions thrown, see
+            // https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+            throw e;
         }
     }
 
